@@ -6,8 +6,8 @@ import { PriorityBadge } from '../components/PriorityBadge';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../utils/api';
 
-// Dashcam mode: a phone on the dashboard (or a recorded dashcam video) is
-// scanned frame by frame on-device. Each road defect is tracked across frames
+// Road scan: the phone camera (handheld for now; mounted as a dashcam later) or
+// a recorded video is scanned frame by frame on-device. Each road defect is tracked across frames
 // so it is logged once, with its closest-approach photo, GPS position and
 // speed. After the drive the citizen reviews each hazard: the server
 // classifies it, routes it to the authority and sets its priority, and only
@@ -78,6 +78,32 @@ export function DashcamPage() {
   useEffect(() => () => stop(), []);
 
   const updateHazards = () => setHazards([...hazardsRef.current]);
+  const latestRef = useRef([]);
+
+  // Log what the camera sees right now, without waiting for 3 frames (handheld demos)
+  const captureNow = () => {
+    const d = latestRef.current[0];
+    if (!d) {
+      setStatus('Nothing detected in this frame. Point the camera at the damage and try again.');
+      return;
+    }
+    const loc = currentLocation();
+    const same = hazardsRef.current.find((h) => h.name === d.name &&
+      (loc && h.location ? metres(h.location, loc) < SAME_HAZARD_METRES : performance.now() - (h.lastSeenMs || 0) < 3000));
+    if (same) {
+      Object.assign(same, { blobPromise: snapshot(videoRef.current), confidence: Math.max(same.confidence || 0, d.confidence), detection: d });
+      updateHazards();
+      setStatus(`${d.label} already logged here; photo updated`);
+      return;
+    }
+    const h = { id: `${performance.now()}-manual`, name: d.name, label: d.label, subcategoryId: d.subcategoryId,
+                seenAt: new Date(), frames: 1, selected: true, confidence: d.confidence,
+                area: (d.x2 - d.x1) * (d.y2 - d.y1), location: currentLocation(), detection: d,
+                videoTime: videoRef.current.currentTime, blobPromise: snapshot(videoRef.current) };
+    hazardsRef.current.push(h);
+    updateHazards();
+    setStatus(`Captured: ${d.label}`);
+  };
 
   const start = async (kind, file) => {
     setError('');
@@ -187,7 +213,7 @@ export function DashcamPage() {
         Object.assign(t.logged, {
           frames: t.logged.frames + 1,
           confidence: Math.max(t.logged.confidence || 0, t.best.confidence),
-          area: t.best.area, location: t.best.location || t.logged.location, videoTime: t.best.videoTime,
+          area: t.best.area, location: t.best.location || t.logged.location, videoTime: t.best.videoTime, lastSeenMs: now,
           blobPromise: t.best.blobPromise, detection: t.best.detection
         });
       }
@@ -209,6 +235,7 @@ export function DashcamPage() {
           }))];
           const now = performance.now();
           setBoxes(dets);
+          latestRef.current = [...dets].sort((a, b) => b.confidence - a.confidence);
           await track(dets, now);
           updateHazards();
           setFps(Math.round(1000 / Math.max(1, now - last)));
@@ -240,7 +267,7 @@ export function DashcamPage() {
     const fd = new FormData();
     const when = h.seenAt.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
     const speed = h.location?.speedKmh;
-    const description = `${h.label} on the road, recorded by dashcam on ${when}` +
+    const description = `${h.label} on the road, recorded by ${mode === 'video' ? 'video' : 'live phone camera'} scan on ${when}` +
       (loc ? ` near ${loc.lat.toFixed(5)}, ${loc.lon.toFixed(5)}` : '') +
       (speed != null ? ` while driving at about ${Math.round(speed)} km/h` : '') + '.';
     fd.append('description', description);
@@ -306,15 +333,16 @@ export function DashcamPage() {
   const analyseAll = async () => { for (const h of selected) if (!h.analysis) await analyse(h); };
   const submitAll = async () => { for (const h of selected) if (h.analysis && !h.result) await submit(h); };
   const needGps = hazards.some((h) => !h.location);
+  const fullscreen = running && mode === 'camera';
 
   return (
     <div className="container">
       <div className="mb-4">
-        <h1>Dashcam Scan</h1>
+        <h1>Road Scan</h1>
         <p className="text-secondary">
-          Mount your phone on the dashboard facing the road, or open a dashcam video. Potholes and road cracks are
-          detected on your phone as you drive, logged once each with a photo and GPS position, and you review them
-          after the drive. Do not touch the phone while driving.
+          Point your phone camera at the road, or open a recorded video. Potholes and road cracks are detected live
+          on your phone, each one is logged once with a photo and GPS position, and you review them before anything
+          is submitted. (Dashboard-mounted dashcam use will come later; never handle the phone while driving.)
         </p>
       </div>
 
@@ -324,9 +352,9 @@ export function DashcamPage() {
         <div className="flex gap-2 items-center" style={{ flexWrap: 'wrap' }}>
           {!running ? (
             <>
-              <button className="btn btn-primary" onClick={() => start('camera')}>▶ Start live dashcam</button>
+              <button className="btn btn-primary" onClick={() => start('camera')}>📱 Start camera scan</button>
               <label className="btn btn-outline">
-                📂 Open dashcam video
+                📂 Open a video
                 <input type="file" accept="video/*" hidden onChange={(e) => e.target.files[0] && start('video', e.target.files[0])} />
               </label>
             </>
@@ -346,14 +374,39 @@ export function DashcamPage() {
         {status && <div className="text-sm mt-2">{status}</div>}
         {error && <div className="form-error text-sm mt-2">{error}</div>}
 
-        <div className="live-camera-stage mt-2" style={{ display: mode ? 'block' : 'none' }}>
-          <video ref={videoRef} autoPlay playsInline muted className="live-camera-video" style={{ width: '100%' }} />
-          {boxes.map((b, i) => (
-            <div key={i} className={`detection-box dashcam-${b.name}`}
-              style={{ left: `${b.x1 * 100}%`, top: `${b.y1 * 100}%`, width: `${(b.x2 - b.x1) * 100}%`, height: `${(b.y2 - b.y1) * 100}%` }}>
-              <span className="detection-label">{b.label} {Math.round(b.confidence * 100)}%</span>
+        {/* Camera scans go full screen (phone demo); videos play inline */}
+        <div className={fullscreen ? 'live-camera-overlay' : 'scan-inline mt-2'} style={{ display: mode === 'video' || fullscreen ? undefined : 'none' }}>
+          {fullscreen && (
+            <div className="live-camera-header">
+              <span className="live-camera-title"><span className="live-dot" /> Road Scan · {hazards.length} found</span>
+              <button type="button" className="btn btn-sm btn-outline live-camera-close" onClick={stop}>■ Done</button>
             </div>
-          ))}
+          )}
+          <div className={fullscreen ? 'live-camera-frame' : ''}>
+            <div className="live-camera-stage">
+              <video ref={videoRef} autoPlay playsInline muted className="live-camera-video" />
+              {boxes.map((b, i) => (
+                <div key={i} className={`detection-box dashcam-${b.name}`}
+                  style={{ left: `${b.x1 * 100}%`, top: `${b.y1 * 100}%`, width: `${(b.x2 - b.x1) * 100}%`, height: `${(b.y2 - b.y1) * 100}%` }}>
+                  <span className="detection-label">{b.label} {Math.round(b.confidence * 100)}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          {fullscreen && (
+            <div className="live-camera-status">
+              <div>{error ? <span className="text-error">{error}</span> : status}</div>
+              <div className="flex gap-2 items-center mt-2" style={{ justifyContent: 'center', flexWrap: 'wrap' }}>
+                <button type="button" className="btn btn-primary" onClick={captureNow}>📸 Capture</button>
+                <label className="text-sm flex items-center gap-1">
+                  <input type="checkbox" checked={voice} onChange={(e) => setVoice(e.target.checked)} /> Voice
+                </label>
+                <span className="text-sm" style={{ opacity: 0.8 }}>
+                  {fps} fps · 📍 {gps ? `GPS${gps.speed != null ? ` · ${Math.round(gps.speed * 3.6)} km/h` : ''}` : 'waiting for GPS'}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

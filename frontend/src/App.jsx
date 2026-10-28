@@ -17,6 +17,7 @@ export default function App() {
         <main className="main-content">
           <Routes>
             <Route path="/" element={<ReportPage />} />
+            <Route path="/scan" element={<DashcamPage />} />
             <Route path="/dashcam" element={<DashcamPage />} />
             <Route path="/track" element={<TrackPage />} />
             <Route path="/track/:ticketId" element={<TrackPage />} />
