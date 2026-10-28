@@ -2,9 +2,8 @@
 // fallen trees, garbage, flooding, debris and open manholes are compared with
 // text prompts whose embeddings ship in civic_scene.json (see
 // training/export_clip_scene.py for how the thresholds were measured).
-import * as ort from 'onnxruntime-web/webgpu';
+import { ort, createSession } from './ortSession';
 
-ort.env.wasm.wasmPaths = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ort.env.versions.web}/dist/`;
 
 let promise = null;
 
@@ -14,7 +13,7 @@ async function create() {
     return r.json();
   });
   // int8 (dynamically quantised) ops run on the WASM backend
-  const session = await ort.InferenceSession.create('/models/civic_scene.onnx', { executionProviders: ['wasm'] });
+  const session = await createSession('/models/civic_scene.onnx');
   const n = config.inputSize;
   const canvas = document.createElement('canvas');
   canvas.width = n;

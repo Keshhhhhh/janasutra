@@ -1,9 +1,8 @@
 // On-device road-damage detection for dashcam mode (potholes, cracks, alligator
 // cracking) with ONNX Runtime Web. Class names, per-class thresholds and the
 // taxonomy subcategory of each class ship in road_damage.json next to the model.
-import * as ort from 'onnxruntime-web/webgpu';
+import { ort, createSession } from './ortSession';
 
-ort.env.wasm.wasmPaths = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ort.env.versions.web}/dist/`;
 
 const MODEL_URL = '/models/road_damage.onnx';
 const CONFIG_URL = '/models/road_damage.json';
@@ -16,14 +15,7 @@ async function create() {
     if (!r.ok) throw new Error('road-damage model not installed');
     return r.json();
   });
-  const providers = 'gpu' in navigator ? ['webgpu', 'wasm'] : ['wasm'];
-  let session;
-  try {
-    session = await ort.InferenceSession.create(MODEL_URL, { executionProviders: providers });
-  } catch (err) {
-    if (providers[0] !== 'webgpu') throw err;
-    session = await ort.InferenceSession.create(MODEL_URL, { executionProviders: ['wasm'] });
-  }
+  const session = await createSession(MODEL_URL, { preferGpu: true });
   const size = config.inputSize;
   const canvas = document.createElement('canvas');
   canvas.width = size;

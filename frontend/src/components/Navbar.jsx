@@ -1,88 +1,89 @@
-import React, { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import React, { useEffect, useRef, useState } from 'react';
+import { Link, NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { Icon, Logo } from './Icon';
 
-export function Navbar() {
-  const { user, isLoggedIn, isAdmin, logout } = useAuth();
-  const [menuOpen, setMenuOpen] = useState(false);
+// App shell navigation: a top bar on wide screens and a bottom tab bar on phones.
+
+function useTabs(isLoggedIn, isAdmin) {
+  return [
+    { to: '/', label: 'Report', icon: 'plus', end: true },
+    { to: '/scan', label: 'Scan', icon: 'scan' },
+    { to: '/track', label: 'Track', icon: 'search' },
+    isAdmin
+      ? { to: '/admin', label: 'Admin', icon: 'grid' }
+      : { to: isLoggedIn ? '/my-complaints' : '/login', label: 'Mine', icon: 'list' },
+  ];
+}
+
+function UserMenu() {
+  const { user, logout } = useAuth();
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
   const location = useLocation();
 
-  const isActive = (path) => location.pathname === path;
+  useEffect(() => setOpen(false), [location.pathname]);
+  useEffect(() => {
+    const close = (e) => ref.current && !ref.current.contains(e.target) && setOpen(false);
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, []);
+
+  const name = user?.phone_or_email || '';
+  return (
+    <div className="user-menu" ref={ref}>
+      <button className="avatar" onClick={() => setOpen(!open)} aria-label="Account menu" aria-expanded={open}>
+        {name.charAt(0).toUpperCase() || 'U'}
+      </button>
+      {open && (
+        <div className="menu-popover" role="menu">
+          <div className="menu-head">
+            <div className="menu-name">{name}</div>
+            <div className="menu-sub">{user?.is_admin ? 'Administrator' : 'Citizen'}</div>
+          </div>
+          <Link to="/my-complaints" className="menu-item" role="menuitem"><Icon name="list" size={18} /> My reports</Link>
+          {user?.is_admin && <Link to="/admin" className="menu-item" role="menuitem"><Icon name="grid" size={18} /> Admin dashboard</Link>}
+          <button className="menu-item danger" role="menuitem" onClick={logout}><Icon name="logout" size={18} /> Log out</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function Navbar() {
+  const { isLoggedIn, isAdmin } = useAuth();
+  const tabs = useTabs(isLoggedIn, isAdmin);
 
   return (
-    <nav className="navbar">
-      <div className="container">
-        <Link to="/" className="navbar-brand">
-          🏛️ JanaSutra
-        </Link>
-
-        {/* Desktop Nav */}
-        <div className="navbar-nav">
-          <Link to="/" className={`nav-link ${isActive('/') ? 'active' : ''}`}>Report</Link>
-          <Link to="/scan" className={`nav-link ${isActive('/scan') ? 'active' : ''}`}>Road Scan</Link>
-          <Link to="/track" className={`nav-link ${isActive('/track') ? 'active' : ''}`}>Track</Link>
-          
-          {isLoggedIn && (
-            <Link to="/my-complaints" className={`nav-link ${isActive('/my-complaints') ? 'active' : ''}`}>
-              My Complaints
-            </Link>
-          )}
-          
-          {isAdmin && (
-            <Link to="/admin" className={`nav-link ${isActive('/admin') ? 'active' : ''}`}>
-              Admin
-            </Link>
-          )}
-
-          {isLoggedIn ? (
-            <div className="flex items-center gap-4">
-              <div className="user-avatar" title={user.phone_or_email}>
-                {user.phone_or_email ? user.phone_or_email.charAt(0).toUpperCase() : 'U'}
-              </div>
-              <button className="btn btn-outline btn-sm" onClick={logout}>Logout</button>
-            </div>
-          ) : (
-            <Link to="/login" className="btn btn-primary btn-sm">Login</Link>
-          )}
-        </div>
-
-        {/* Mobile Hamburger */}
-        <button 
-          className="hamburger-btn" 
-          onClick={() => setMenuOpen(!menuOpen)}
-        >
-          {menuOpen ? '✕' : '☰'}
-        </button>
-
-        {/* Mobile Menu */}
-        <div className={`mobile-menu ${menuOpen ? 'open' : ''}`}>
-          <div className="flex justify-end mb-4">
-            <button className="hamburger-btn" onClick={() => setMenuOpen(false)}>✕</button>
-          </div>
-          <Link to="/" className="nav-link" onClick={() => setMenuOpen(false)}>Report an Issue</Link>
-          <Link to="/track" className="nav-link" onClick={() => setMenuOpen(false)}>Track Status</Link>
-          
-          {isLoggedIn && (
-            <Link to="/my-complaints" className="nav-link" onClick={() => setMenuOpen(false)}>My Complaints</Link>
-          )}
-          
-          {isAdmin && (
-            <Link to="/admin" className="nav-link" onClick={() => setMenuOpen(false)}>Admin Dashboard</Link>
-          )}
-
-          <div className="mt-auto">
-            {isLoggedIn ? (
-              <button className="btn btn-outline btn-full" onClick={() => { logout(); setMenuOpen(false); }}>
-                Logout
-              </button>
-            ) : (
-              <Link to="/login" className="btn btn-primary btn-full" onClick={() => setMenuOpen(false)}>
-                Login / Register
-              </Link>
-            )}
+    <>
+      <header className="topbar">
+        <div className="topbar-inner">
+          <Link to="/" className="brand">
+            <Logo />
+            <span>JanaSutra</span>
+          </Link>
+          <nav className="topnav" aria-label="Main">
+            {tabs.map((t) => (
+              <NavLink key={t.to + t.label} to={t.to} end={t.end} className={({ isActive }) => `topnav-link${isActive ? ' active' : ''}`}>
+                {t.label === 'Mine' ? 'My reports' : t.label === 'Scan' ? 'Road Scan' : t.label}
+              </NavLink>
+            ))}
+          </nav>
+          <div className="topbar-end">
+            {isLoggedIn ? <UserMenu /> : <Link to="/login" className="btn btn-primary btn-sm">Log in</Link>}
           </div>
         </div>
-      </div>
-    </nav>
+      </header>
+
+      <nav className="tabbar" aria-label="Main">
+        {tabs.map((t) => (
+          <NavLink key={t.to + t.label} to={t.to} end={t.end}
+            className={({ isActive }) => `tab${isActive ? ' active' : ''}${t.icon === 'scan' ? ' tab-scan' : ''}`}>
+            <span className="tab-icon"><Icon name={t.icon} size={t.icon === 'scan' ? 24 : 22} /></span>
+            <span className="tab-label">{t.label}</span>
+          </NavLink>
+        ))}
+      </nav>
+    </>
   );
 }

@@ -5,8 +5,22 @@ import { LiveCameraDetector } from '../components/LiveCameraDetector';
 import { LocationPicker } from '../components/LocationPicker';
 import { PriorityBadge } from '../components/PriorityBadge';
 import { AiReview, canSubmit } from '../components/AiReview';
-import { api } from '../utils/api';
+import { api, categoryLabel } from '../utils/api';
 import { checkPhoto } from '../utils/authenticityCheck';
+import { Icon } from '../components/Icon';
+import { loadCivicDetectors, analyseImage, fileToImage, describeFindings } from '../utils/civicDetect';
+
+function StepHead({ n, title, hint, done }) {
+  return (
+    <div className="step-head">
+      <span className={`step-num${done ? ' done' : ''}`}>{done ? <Icon name="check" size={15} strokeWidth={3} /> : n}</span>
+      <div>
+        <h2 className="step-title">{title}</h2>
+        {hint && <p className="step-hint">{hint}</p>}
+      </div>
+    </div>
+  );
+}
 
 export function ReportPage() {
   const [images, setImages] = useState([]);
@@ -99,20 +113,51 @@ export function ReportPage() {
     });
   }, [images]);
 
+  // On-device detection on every photo (uploaded or live): what the photo shows
+  const [findings, setFindings] = useState({});
+  const descTouched = React.useRef(false);
+  useEffect(() => {
+    images.forEach((img) => {
+      if (findings[img.url]) return;
+      if (img.items) {
+        setFindings((prev) => ({ ...prev, [img.url]: img.items }));
+        return;
+      }
+      setFindings((prev) => ({ ...prev, [img.url]: 'checking' }));
+      loadCivicDetectors()
+        .then(() => fileToImage(img.file))
+        .then((el) => analyseImage(el))
+        .then((items) => setFindings((prev) => ({ ...prev, [img.url]: items })))
+        .catch(() => setFindings((prev) => ({ ...prev, [img.url]: [] })));
+    });
+  }, [images]);
+  const found = images.map((img) => findings[img.url]).filter(Array.isArray).flat();
+  const merged = Object.values(found.reduce((acc, i) => {
+    const prev = acc[i.name];
+    acc[i.name] = prev ? { ...prev, confidence: Math.max(prev.confidence, i.confidence), count: prev.count + i.count } : { ...i };
+    return acc;
+  }, {})).sort((a, b) => b.confidence - a.confidence);
+  const detecting = images.some((img) => findings[img.url] === 'checking');
+  // Suggest a description from what the photos show, until the citizen types their own
+  useEffect(() => {
+    if (!descTouched.current && merged.length && !detecting) {
+      setDescription(`${describeFindings(merged)} — needs attention.`.slice(0, 500));
+    }
+  }, [detecting, merged.length]);
+
   const flaggedPhotos = images.map(img => photoChecks[img.url]).filter(c => c && c !== 'checking' && c.flagged);
 
-  const handleLiveDetected = ({ file, location: detectedLocation, capturedAt, detection }) => {
+  const handleLiveDetected = ({ file, location: detectedLocation, capturedAt, detection, items }) => {
     setShowLiveScan(false);
-    setImages(prev => [...prev, { file, url: URL.createObjectURL(file), live: true }]);
+    setImages(prev => [...prev, { file, url: URL.createObjectURL(file), live: true, items }]);
     if (detectedLocation) setLocation(detectedLocation);
 
     const when = capturedAt.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' });
-    const count = detection.count === 1 ? '1 pothole' : `${detection.count} potholes`;
-    const where = detectedLocation
-      ? ` near ${detectedLocation.lat.toFixed(5)}, ${detectedLocation.lon.toFixed(5)}`
-      : '';
-    setDescription(`Pothole on road detected by live camera${where} on ${when}. ${count} visible.`.slice(0, 500));
-    setLiveDetection({ capturedAt, confidence: detection.max_confidence, count: detection.count, hasLocation: !!detectedLocation });
+    const where = detectedLocation ? ` near ${detectedLocation.lat.toFixed(5)}, ${detectedLocation.lon.toFixed(5)}` : '';
+    const what = items.length ? describeFindings(items) : 'Civic problem';
+    descTouched.current = true;
+    setDescription(`${what} seen by live camera${where} on ${when}.`.slice(0, 500));
+    setLiveDetection({ capturedAt, confidence: detection.max_confidence, labels: items.map((i) => i.label), hasLocation: !!detectedLocation });
   };
 
   const handleSubmit = async (e) => {
@@ -164,10 +209,12 @@ export function ReportPage() {
     }
   };
 
+  const [copied, setCopied] = useState(false);
   const copyTicketId = () => {
     if (result?.ticket_id) {
-      navigator.clipboard.writeText(result.ticket_id);
-      alert('Ticket ID copied to clipboard!');
+      navigator.clipboard?.writeText(result.ticket_id);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
     }
   };
 
@@ -184,124 +231,132 @@ export function ReportPage() {
   };
 
   if (result) {
+    const unconfirmed = ['registry_unconfirmed', 'unresolved'].includes(result.department_basis);
     return (
-      <div className="centered-page">
-        <div className="card card-container text-center">
-          <div className="success-checkmark">✓</div>
-          <h2>Report Submitted Successfully!</h2>
-          <p className="text-secondary mb-6">Thank you for helping improve Bengaluru.</p>
-          
-          <div className="card bg-light mb-6" style={{ backgroundColor: 'var(--color-surface-hover)' }}>
-            <p className="text-sm text-secondary mb-2">Your Ticket ID</p>
-            <div 
-              className="ticket-id mb-4" 
-              style={{ fontSize: '24px', color: 'var(--color-primary)', cursor: 'pointer' }}
-              onClick={copyTicketId}
-              title="Click to copy"
-            >
-              {result.ticket_id} 📋
-            </div>
-            
-            <div className="flex justify-center gap-4 flex-wrap">
-              {result.category && <span className="badge badge-submitted">{result.category}</span>}
-              {result.department && <span className="badge badge-submitted">{result.department}</span>}
-              {['registry_unconfirmed', 'unresolved'].includes(result.department_basis) && (
-                <span className="badge badge-submitted">authority to be confirmed by officials</span>
-              )}
-              {result.priority && <PriorityBadge priority={result.priority} />}
-            </div>
-          </div>
+      <div className="shell narrow">
+        <div className="panel success">
+          <div className="success-badge"><Icon name="check" size={34} strokeWidth={2.6} /></div>
+          <h1 className="h2">Report submitted</h1>
+          <p className="muted">Thank you. Officials will see your report with the photo and location.</p>
 
-          <div className="flex flex-col gap-4">
-            <Link to={`/track/${result.ticket_id}`} className="btn btn-primary btn-full">
-              Track your complaint →
-            </Link>
-            <button onClick={handleReset} className="btn btn-outline btn-full">
-              Report another issue
-            </button>
+          <button type="button" className="ticket" onClick={copyTicketId} title="Copy ticket ID">
+            <span className="ticket-label">Ticket ID</span>
+            <span className="ticket-value">{result.ticket_id}</span>
+            <span className="ticket-copy"><Icon name={copied ? 'check' : 'copy'} size={16} /> {copied ? 'Copied' : 'Copy'}</span>
+          </button>
+
+          <dl className="facts two">
+            {result.department && <div><dt>Sent to</dt><dd>{result.department}{unconfirmed && <span className="muted"> · to be confirmed</span>}</dd></div>}
+            {result.category && <div><dt>Category</dt><dd>{categoryLabel(result.category)}</dd></div>}
+            {result.priority && <div><dt>Priority</dt><dd><PriorityBadge priority={result.priority} /></dd></div>}
+          </dl>
+
+          <div className="stack-sm">
+            <Link to={`/track/${result.ticket_id}`} className="btn btn-primary btn-full">Track this report <Icon name="arrow" size={18} /></Link>
+            <button onClick={handleReset} className="btn btn-ghost btn-full">Report another issue</button>
           </div>
         </div>
       </div>
     );
   }
 
+  const step1 = images.length > 0, step2 = description.trim().length > 0, step3 = !!location;
   return (
-    <div className="centered-page">
-      <div className="card card-container">
-        <div className="mb-6 text-center">
-          <h1>Report an Issue</h1>
-          <p className="text-secondary">Help improve Bengaluru — snap a photo and describe the problem</p>
-        </div>
+    <div className="shell narrow">
+      <header className="page-head">
+        <span className="eyebrow">New report</span>
+        <h1>What needs fixing?</h1>
+        <p className="muted">Add a photo, say what is wrong and where. JanaSutra works out the problem and the
+          responsible authority, and you check everything before it is sent.</p>
+      </header>
 
-        <form onSubmit={handleSubmit}>
+      <form onSubmit={handleSubmit} className="stack">
+        <section className="panel step">
+          <StepHead n={1} done={step1} title="Photo" hint="Up to 5 clear photos of the problem" />
           <ImageUploader
             images={images}
             setImages={setImages}
             setLocation={setLocation}
             onLiveScan={() => setShowLiveScan(true)}
           />
-
+          {images.length > 0 && (detecting || merged.length > 0) && (
+            <div className="notice ok appear">
+              <Icon name="scan" />
+              <div>
+                <strong>{detecting ? 'Checking your photos…' : 'Found in your photos'}</strong>
+                {merged.length > 0 && (
+                  <div className="detected mt-1">
+                    {merged.map((i) => <span key={i.name} className="chip">{i.label}{i.count > 1 ? ` ×${i.count}` : ''} · {Math.round(i.confidence * 100)}%</span>)}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          {images.length > 0 && !detecting && merged.length === 0 && Object.keys(findings).length > 0 && (
+            <p className="muted small">No problem was recognised automatically — describe it below and the AI will classify it from your words.</p>
+          )}
           {flaggedPhotos.length > 0 && (
-            <div className="authenticity-banner mb-6">
-              <strong>⚠️ This photo may not be a real, live photo of the issue</strong>
-              <ul className="text-sm">
-                {[...new Set(flaggedPhotos.flatMap(c => c.reasons))].map(r => <li key={r}>{r}</li>)}
-              </ul>
-              <div className="text-sm text-secondary">
-                Please take a photo of the actual location with your camera. You can still submit,
-                but the report will be marked for verification by officials.
+            <div className="notice warn">
+              <Icon name="alert" />
+              <div>
+                <strong>This may not be a real, live photo of the issue</strong>
+                <ul>{[...new Set(flaggedPhotos.flatMap(c => c.reasons))].map(r => <li key={r}>{r}</li>)}</ul>
+                <p>Please photograph the actual place. You can still submit; the report will be marked for verification.</p>
               </div>
             </div>
           )}
-
           {liveDetection && (
-            <div className="detection-banner mb-6">
-              <strong>🎯 Pothole auto-detected</strong>
-              <div className="text-sm">
-                {Math.round(liveDetection.confidence * 100)}% confidence · captured{' '}
-                {liveDetection.capturedAt.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
-                {liveDetection.hasLocation
-                  ? ' · location from device GPS'
-                  : ' · GPS unavailable, please set the location below'}
+            <div className="notice ok">
+              <Icon name="scan" />
+              <div>
+                <strong>{liveDetection.labels.length ? `Live detection: ${liveDetection.labels.join(', ')}` : 'Captured with live detection'}</strong>
+                <p>Captured {liveDetection.capturedAt.toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
+                  {liveDetection.hasLocation ? ' · location from GPS' : ' · GPS unavailable, set the location below'}</p>
               </div>
-              <div className="text-sm text-secondary">Review the details below, then submit.</div>
             </div>
           )}
-          
-          <div className="form-group mb-6">
-            <label className="form-label">Description</label>
-            <input 
-              type="text" 
-              className="form-input" 
-              placeholder="Briefly describe the issue..." 
+        </section>
+
+        <section className="panel step">
+          <StepHead n={2} done={step2} title="What is wrong?" hint="A sentence is enough — English or ಕನ್ನಡ" />
+          <div className="field">
+            <textarea
+              className="input textarea"
+              rows={3}
+              placeholder="e.g. Deep pothole near the bus stop, bikes are skidding"
               value={description}
-              onChange={(e) => setDescription(e.target.value.slice(0, 500))}
+              onChange={(e) => { descTouched.current = true; setDescription(e.target.value.slice(0, 500)); }}
             />
-            <div className="flex justify-end mt-1">
-              <span className="text-sm text-tertiary">{description.length}/500</span>
-            </div>
+            <span className="counter">{description.length}/500</span>
           </div>
+        </section>
 
+        <section className="panel step">
+          <StepHead n={3} done={step3} title="Where is it?" hint="Location decides which authority gets it" />
           <LocationPicker location={location} setLocation={setLocation} />
-
-          <div className="flex gap-4 mb-4 flex-wrap">
-            <div className="form-group" style={{ flex: '2 1 180px' }}>
-              <label className="form-label">Locality / landmark <span className="text-tertiary">(helps routing)</span></label>
-              <input type="text" className="form-input" placeholder="e.g. Jayanagar 4th Block"
+          <div className="row-2">
+            <label className="field">
+              <span className="label">Locality or landmark <em>optional</em></span>
+              <input type="text" className="input" placeholder="e.g. Jayanagar 4th Block"
                 value={locality} onChange={(e) => setLocality(e.target.value.slice(0, 120))} />
-            </div>
-            <div className="form-group" style={{ flex: '1 1 110px' }}>
-              <label className="form-label">PIN code</label>
-              <input type="text" inputMode="numeric" className="form-input" placeholder="560041"
+            </label>
+            <label className="field">
+              <span className="label">PIN code <em>optional</em></span>
+              <input type="text" inputMode="numeric" className="input" placeholder="560041"
                 value={pinCode} onChange={(e) => setPinCode(e.target.value.replace(/\D/g, '').slice(0, 6))} />
-            </div>
+            </label>
           </div>
-          <label className="ai-option mb-6">
+          <label className="switch">
             <input type="checkbox" checked={rural} onChange={(e) => setRural(e.target.checked)} />
-            <span className="text-sm">This is in a village (Gram Panchayat area)</span>
+            <span className="switch-track" aria-hidden="true"><span className="switch-thumb" /></span>
+            <span>It is in a village (Gram Panchayat area)</span>
           </label>
+        </section>
 
-          {analysis && (
+        {analysis && (
+          <section className="panel step appear">
+            <StepHead n={4} done={canSubmit(analysis, choices) && analysis.status !== 'out_of_scope'} title="Check and confirm"
+              hint="What the AI found — change anything that is wrong" />
             <AiReview
               analysis={analysis}
               taxonomy={taxonomy}
@@ -311,31 +366,36 @@ export function ReportPage() {
               setDraftText={setDraftText}
               busy={analyzing}
             />
+          </section>
+        )}
+
+        {error && <div className="notice error"><Icon name="alert" /><div>{error}</div></div>}
+
+        <div className="action-bar">
+          {analysis && (
+            <button type="button" className="btn btn-ghost" disabled={analyzing} onClick={() => runAnalysis({}, null)}>
+              <Icon name="refresh" size={18} /> Re-check
+            </button>
           )}
-
-          {error && <div className="form-error mb-4">{error}</div>}
-
-          <button 
-            type="submit" 
-            className="btn btn-accent btn-full" 
-            style={{ fontSize: '16px', padding: '16px' }}
+          <button
+            type="submit"
+            className="btn btn-primary btn-lg grow"
             disabled={!images.length || !description || !location || loading || analyzing
               || (analysis && !canSubmit(analysis, choices))}
           >
-            {loading ? 'Submitting...'
-              : analyzing ? 'Checking photo and description…'
-              : (!analysis && !analysisFailed) ? 'Check with AI →'
+            {loading ? <><span className="spin" /> Submitting…</>
+              : analyzing ? <><span className="spin" /> Checking photo and text…</>
+              : (!analysis && !analysisFailed) ? <>Check report <Icon name="arrow" size={18} /></>
               : analysis?.status === 'out_of_scope' ? 'Not a civic issue'
-              : 'Submit Report →'}
+              : <>Submit report <Icon name="arrow" size={18} /></>}
           </button>
-          {analysis && (
-            <button type="button" className="btn btn-outline btn-full mt-2" disabled={analyzing}
-              onClick={() => runAnalysis({}, null)}>
-              Re-check
-            </button>
-          )}
-        </form>
-      </div>
+        </div>
+        {!(step1 && step2 && step3) && (
+          <p className="hint-line">
+            Still needed: {[!step1 && 'a photo', !step2 && 'a description', !step3 && 'the location'].filter(Boolean).join(', ')}
+          </p>
+        )}
+      </form>
 
       {showLiveScan && (
         <LiveCameraDetector

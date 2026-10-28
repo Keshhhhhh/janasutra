@@ -4,6 +4,7 @@ import { loadRoadDamage, detectRoadDamage } from '../utils/roadDamageDetector';
 import { loadDetector, detectPotholes } from '../utils/potholeDetector';
 import { loadCivicScene, classifyScene } from '../utils/civicScene';
 import { PriorityBadge } from '../components/PriorityBadge';
+import { Icon } from '../components/Icon';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../utils/api';
 
@@ -163,6 +164,7 @@ export function DashcamPage() {
   };
 
   const stop = () => {
+    const wasRunning = runningRef.current;
     runningRef.current = false;
     setRunning(false);
     streamRef.current?.getTracks?.().forEach((t) => t.stop());
@@ -171,7 +173,7 @@ export function DashcamPage() {
     videoRef.current?.pause?.();
     setBoxes([]);
     setSceneIssues([]);
-    setStatus(hazardsRef.current.length ? 'Drive finished. Review the hazards below.' : 'Stopped.');
+    if (wasRunning) setStatus(hazardsRef.current.length ? 'Scan finished. Review what was found below.' : 'Scan stopped. Nothing was found.');
   };
 
   const currentLocation = () => {
@@ -355,58 +357,69 @@ export function DashcamPage() {
   const needGps = hazards.some((h) => !h.location);
   const fullscreen = running && mode === 'camera';
 
+  const DETECTS = ['Potholes', 'Cracks', 'Fallen trees', 'Garbage', 'Flooding', 'Debris', 'Open manholes'];
   return (
-    <div className="container">
-      <div className="mb-4">
-        <h1>Road Scan</h1>
-        <p className="text-secondary">
-          Point your phone camera at the road, or open a recorded video. Potholes, road cracks, fallen trees,
-          garbage, flooding, debris and open manholes are detected live on your phone, each one is logged once with a photo and GPS position, and you review them before anything
-          is submitted. (Dashboard-mounted dashcam use will come later; never handle the phone while driving.)
-        </p>
-      </div>
+    <div className="shell">
+      <header className="page-head">
+        <span className="eyebrow">Road Scan</span>
+        <h1>Scan the road, report what it finds</h1>
+        <p className="muted">Point your phone at the road or open a recorded video. Problems are detected on your
+          phone, each is logged once with a photo and GPS, and you review them before anything is sent.</p>
+        <div className="chips">{DETECTS.map((d) => <span key={d} className="chip">{d}</span>)}</div>
+      </header>
 
-      {!user && <div className="authenticity-banner mb-4">Please <Link to="/login">log in</Link> to report hazards.</div>}
+      {!user && (
+        <div className="notice info"><Icon name="user" /><div><Link to="/login">Log in</Link> to classify and submit what you find. Scanning works without an account.</div></div>
+      )}
 
-      <div className="card mb-4">
-        <div className="flex gap-2 items-center" style={{ flexWrap: 'wrap' }}>
-          {!running ? (
-            <>
-              <button className="btn btn-primary" onClick={() => start('camera')}>📱 Start camera scan</button>
-              <label className="btn btn-outline">
-                📂 Open a video
-                <input type="file" accept="video/*" hidden onChange={(e) => e.target.files[0] && start('video', e.target.files[0])} />
-              </label>
-            </>
-          ) : (
-            <button className="btn btn-outline" onClick={stop}>■ Stop</button>
-          )}
-          <label className="text-sm flex items-center gap-1">
-            <input type="checkbox" checked={voice} onChange={(e) => setVoice(e.target.checked)} /> Voice alerts
+      <div className="panel">
+        {!running ? (
+          <div className="capture-grid two">
+            <button className="capture-tile featured" onClick={() => start('camera')}>
+              <span className="capture-icon"><Icon name="camera" size={22} /></span>
+              <span className="capture-title">Start camera scan</span>
+              <span className="capture-sub">Uses your phone's back camera and GPS</span>
+            </button>
+            <label className="capture-tile">
+              <span className="capture-icon"><Icon name="video" size={22} /></span>
+              <span className="capture-title">Open a video</span>
+              <span className="capture-sub">Scan a recorded clip frame by frame</span>
+              <input type="file" accept="video/*" hidden onChange={(e) => e.target.files[0] && start('video', e.target.files[0])} />
+            </label>
+          </div>
+        ) : (
+          <div className="scan-status-row">
+            <span className="live-pill"><span className="live-dot" /> Scanning</span>
+            <span className="muted">{fps} fps · {hazards.length} found</span>
+            <button className="btn btn-ghost btn-sm" onClick={stop}><Icon name="stop" size={16} /> Stop</button>
+          </div>
+        )}
+        <div className="scan-options">
+          <label className="switch">
+            <input type="checkbox" checked={voice} onChange={(e) => setVoice(e.target.checked)} />
+            <span className="switch-track" aria-hidden="true"><span className="switch-thumb" /></span>
+            <span><Icon name="volume" size={16} /> Voice alerts</span>
           </label>
-          {running && <span className="text-sm text-secondary">{fps} fps · {hazards.length} hazard(s)</span>}
           {mode === 'camera' && (
-            <span className="text-sm text-secondary">
-              📍 {gps ? `GPS ${gps.speed != null ? `· ${Math.round(gps.speed * 3.6)} km/h` : ''}` : 'Waiting for GPS…'}
-            </span>
+            <span className="muted"><Icon name="pin" size={16} /> {gps ? `GPS locked${gps.speed != null ? ` · ${Math.round(gps.speed * 3.6)} km/h` : ''}` : 'Waiting for GPS…'}</span>
           )}
         </div>
-        {status && <div className="text-sm mt-2">{status}</div>}
-        {error && <div className="form-error text-sm mt-2">{error}</div>}
+        {status && !fullscreen && <p className="muted small">{status}</p>}
+        {error && <div className="notice error"><Icon name="alert" /><div>{error}</div></div>}
 
         {/* Camera scans go full screen (phone demo); videos play inline */}
         <div className={fullscreen ? 'live-camera-overlay' : 'scan-inline mt-2'} style={{ display: mode === 'video' || fullscreen ? undefined : 'none' }}>
           {fullscreen && (
             <div className="live-camera-header">
               <span className="live-camera-title"><span className="live-dot" /> Road Scan · {hazards.length} found</span>
-              <button type="button" className="btn btn-sm btn-outline live-camera-close" onClick={stop}>■ Done</button>
+              <button type="button" className="btn btn-sm live-camera-close" onClick={stop}><Icon name="check" size={16} /> Done</button>
             </div>
           )}
           <div className={fullscreen ? 'live-camera-frame' : ''}>
             <div className="live-camera-stage">
               {sceneIssues.length > 0 && (
                 <div className="scene-chips">
-                  {sceneIssues.map((i) => <span key={i.name} className="scene-chip">⚠️ {i.label} {Math.round(i.probability * 100)}%</span>)}
+                  {sceneIssues.map((i) => <span key={i.name} className="scene-chip"><Icon name="alert" size={14} /> {i.label} {Math.round(i.probability * 100)}%</span>)}
                 </div>
               )}
               <video ref={videoRef} autoPlay playsInline muted className="live-camera-video" />
@@ -422,12 +435,12 @@ export function DashcamPage() {
             <div className="live-camera-status">
               <div>{error ? <span className="text-error">{error}</span> : status}</div>
               <div className="flex gap-2 items-center mt-2" style={{ justifyContent: 'center', flexWrap: 'wrap' }}>
-                <button type="button" className="btn btn-primary" onClick={captureNow}>📸 Capture</button>
+                <button type="button" className="btn btn-capture" onClick={captureNow}><Icon name="camera" size={20} /> Capture</button>
                 <label className="text-sm flex items-center gap-1">
                   <input type="checkbox" checked={voice} onChange={(e) => setVoice(e.target.checked)} /> Voice
                 </label>
                 <span className="text-sm" style={{ opacity: 0.8 }}>
-                  {fps} fps · 📍 {gps ? `GPS${gps.speed != null ? ` · ${Math.round(gps.speed * 3.6)} km/h` : ''}` : 'waiting for GPS'}
+                  {fps} fps · {gps ? `GPS${gps.speed != null ? ` · ${Math.round(gps.speed * 3.6)} km/h` : ''}` : 'waiting for GPS'}
                 </span>
               </div>
             </div>
@@ -436,72 +449,97 @@ export function DashcamPage() {
       </div>
 
       {hazards.length > 0 && (
-        <div className="card mb-4">
-          <h3 className="mb-2">Hazards found ({hazards.length})</h3>
-          <p className="text-sm text-secondary mb-2">
-            Each hazard is classified and routed by the server and gets a priority from its severity, size, road
-            speed and how many defects are nearby. Untick anything that is wrong; only ticked hazards are submitted.
-          </p>
-          {needGps && (
-            <div className="flex gap-2 mb-2" style={{ flexWrap: 'wrap' }}>
-              <span className="text-sm">Video has no GPS. Drive location:</span>
-              <input className="form-input" style={{ width: 130 }} placeholder="Latitude" value={manualLoc.lat}
-                onChange={(e) => setManualLoc({ ...manualLoc, lat: e.target.value })} />
-              <input className="form-input" style={{ width: 130 }} placeholder="Longitude" value={manualLoc.lon}
-                onChange={(e) => setManualLoc({ ...manualLoc, lon: e.target.value })} />
+        <section className="panel appear">
+          <div className="section-row">
+            <h2 className="h3">Found on this scan <span className="muted">· {hazards.length}</span></h2>
+            <div className="btn-row">
+              <button className="btn btn-ghost btn-sm" disabled={!user || running || !selected.length} onClick={analyseAll}>Classify selected</button>
+              <button className="btn btn-primary btn-sm" disabled={!user || running || !selected.some((h) => h.analysis)} onClick={submitAll}>Submit selected</button>
             </div>
-          )}
-          <div className="flex gap-2 mb-2 items-center" style={{ flexWrap: 'wrap' }}>
-            <span className="text-sm">In Bengaluru? City corporation:</span>
-            <select className="form-select" style={{ width: 200 }} value={corporation} onChange={(e) => setCorporation(e.target.value)}>
-              <option value="">Not Bengaluru / not sure</option>
-              {BLR_CORPS.map(([id, n]) => <option key={id} value={id}>{n}</option>)}
-            </select>
           </div>
-          <div className="flex gap-2 mb-4">
-            <button className="btn btn-outline" disabled={!user || running || !selected.length} onClick={analyseAll}>Classify selected</button>
-            <button className="btn btn-primary" disabled={!user || running || !selected.some((h) => h.analysis)} onClick={submitAll}>Submit selected</button>
-          </div>
+          <p className="muted small">The server classifies each one, picks the authority and sets the priority from severity,
+            size, road speed and nearby defects. Untick anything wrong — only ticked items are submitted.</p>
 
-          {hazards.map((h) => {
-            const a = h.analysis;
-            return (
-              <div key={h.id} className="dashcam-hazard">
-                <input type="checkbox" checked={h.selected} disabled={!!h.result}
-                  onChange={(e) => { h.selected = e.target.checked; updateHazards(); }} />
-                {h.preview ? <img src={h.preview} alt={h.label} /> : <div className="dashcam-thumb">{h.label}</div>}
-                <div style={{ flex: 1 }}>
-                  <strong>{h.label}</strong> <span className="text-sm text-tertiary">{Math.round((h.confidence || 0) * 100)}% · {h.frames} frames</span>
-                  <div className="text-sm text-secondary">
-                    {h.location ? `${h.location.lat.toFixed(5)}, ${h.location.lon.toFixed(5)}` : 'no GPS'}
-                    {h.location?.speedKmh != null && ` · ${Math.round(h.location.speedKmh)} km/h`}
-                    {h.videoTime != null && mode === 'video' && ` · at ${h.videoTime.toFixed(1)} s`}
-                  </div>
-                  {a && (
-                    <div className="text-sm mt-1">
-                      {a.status === 'out_of_scope' ? 'Not a civic problem' : <>
-                        {a.classification.subcategory_name_en} → {a.routing.authority_name || 'authority pending confirmation'}{' '}
-                        {a.priority_preview && <PriorityBadge priority={a.priority_preview.priority} />}
-                        <div className="text-tertiary">{a.priority_preview?.factors.join(' · ')}</div>
-                        {a.classification.review_reasons.length > 0 && (
-                          <div className="text-tertiary">Review: {a.classification.review_reasons.join('; ')}</div>
-                        )}
-                      </>}
-                    </div>
-                  )}
-                  {h.result && <div className="text-sm mt-1">✅ Submitted as <Link to={`/track/${h.result.ticket_id}`}>{h.result.ticket_id}</Link> ({h.result.priority})</div>}
-                  {h.error && <div className="form-error text-sm">{h.error}</div>}
-                </div>
-                <div className="flex gap-1" style={{ flexDirection: 'column' }}>
-                  {!h.result && <button className="btn btn-sm btn-outline" disabled={!user || h.busy || running} onClick={() => analyse(h)}>{a ? 'Re-check' : 'Classify'}</button>}
-                  {!h.result && a && a.status !== 'out_of_scope' && (
-                    <button className="btn btn-sm btn-primary" disabled={!user || h.busy || running} onClick={() => submit(h)}>Submit</button>
-                  )}
+          <div className="row-2">
+            {needGps && (
+              <div className="field">
+                <span className="label">Video has no GPS — where was it recorded?</span>
+                <div className="row-2 tight">
+                  <input className="input" inputMode="decimal" placeholder="Latitude" value={manualLoc.lat}
+                    onChange={(e) => setManualLoc({ ...manualLoc, lat: e.target.value })} />
+                  <input className="input" inputMode="decimal" placeholder="Longitude" value={manualLoc.lon}
+                    onChange={(e) => setManualLoc({ ...manualLoc, lon: e.target.value })} />
                 </div>
               </div>
-            );
-          })}
-        </div>
+            )}
+            <label className="field">
+              <span className="label">In Bengaluru? City corporation</span>
+              <select className="select" value={corporation} onChange={(e) => setCorporation(e.target.value)}>
+                <option value="">Not Bengaluru / not sure</option>
+                {BLR_CORPS.map(([id, n]) => <option key={id} value={id}>{n}</option>)}
+              </select>
+            </label>
+          </div>
+
+          <ul className="hazards">
+            {hazards.map((h) => {
+              const a = h.analysis;
+              return (
+                <li key={h.id} className={`hazard${h.selected ? '' : ' off'}${h.result ? ' sent' : ''}`}>
+                  <label className="check">
+                    <input type="checkbox" checked={h.selected} disabled={!!h.result}
+                      onChange={(e) => { h.selected = e.target.checked; updateHazards(); }} />
+                    <span className="check-box"><Icon name="check" size={14} strokeWidth={3} /></span>
+                  </label>
+                  <div className="hazard-media">
+                    {h.preview ? <img src={h.preview} alt={h.label} /> : <Icon name={h.name === 'pothole' || h.name.includes('crack') ? 'scan' : 'alert'} size={22} />}
+                  </div>
+                  <div className="hazard-body">
+                    <div className="hazard-title">
+                      <strong>{h.label}</strong>
+                      <span className="muted small">{Math.round((h.confidence || 0) * 100)}% · {h.frames} frame{h.frames === 1 ? '' : 's'}</span>
+                    </div>
+                    <div className="muted small">
+                      {h.location ? <span className="mono">{h.location.lat.toFixed(5)}, {h.location.lon.toFixed(5)}</span> : 'no GPS'}
+                      {h.location?.speedKmh != null && ` · ${Math.round(h.location.speedKmh)} km/h`}
+                      {h.videoTime != null && mode === 'video' && ` · at ${h.videoTime.toFixed(1)} s`}
+                    </div>
+                    {a && (
+                      a.status === 'out_of_scope' ? <div className="flag warn">Not a civic problem</div> : (
+                        <div className="hazard-result">
+                          <div className="route-line">
+                            <span>{a.classification.subcategory_name_en}</span>
+                            <Icon name="arrow" size={14} />
+                            <span>{a.routing.authority_name || 'Authority to be confirmed'}</span>
+                            {a.priority_preview && <PriorityBadge priority={a.priority_preview.priority} />}
+                          </div>
+                          <div className="muted small">{a.priority_preview?.factors.join(' · ')}</div>
+                          {a.classification.review_reasons.length > 0 && (
+                            <div className="muted small">Needs review: {a.classification.review_reasons.join('; ')}</div>
+                          )}
+                        </div>
+                      )
+                    )}
+                    {h.result && (
+                      <div className="flag ok"><Icon name="check" size={14} /> Submitted as <Link to={`/track/${h.result.ticket_id}`} className="mono">{h.result.ticket_id}</Link> · {h.result.priority}</div>
+                    )}
+                    {h.error && <div className="field-error">{h.error}</div>}
+                  </div>
+                  {!h.result && (
+                    <div className="hazard-actions">
+                      <button className="btn btn-ghost btn-sm" disabled={!user || h.busy || running} onClick={() => analyse(h)}>
+                        {h.busy ? <span className="spin" /> : a ? 'Re-check' : 'Classify'}
+                      </button>
+                      {a && a.status !== 'out_of_scope' && (
+                        <button className="btn btn-primary btn-sm" disabled={!user || h.busy || running} onClick={() => submit(h)}>Submit</button>
+                      )}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
       )}
     </div>
   );

@@ -2,10 +2,9 @@
 // photo of a screen, or downloaded/screenshot. Mirrors
 // backend/services/image_authenticity.py; the server re-checks every
 // submission, this only warns the citizen early.
-import * as ort from 'onnxruntime-web/webgpu';
+import { ort, createSession } from './ortSession';
 import exifr from 'exifr';
 
-ort.env.wasm.wasmPaths = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ort.env.versions.web}/dist/`;
 
 const MODEL_URL = '/models/authenticity.onnx';
 const MODEL_CONFIG_URL = '/models/authenticity.json';
@@ -31,7 +30,7 @@ async function createClassifier() {
   // Model not deployed yet: metadata checks only
   if (!res.ok || !(res.headers.get('content-type') || '').includes('json')) return null;
   const config = await res.json();
-  const session = await ort.InferenceSession.create(MODEL_URL, { executionProviders: ['wasm'] });
+  const session = await createSession(MODEL_URL);
   return { session, config };
 }
 

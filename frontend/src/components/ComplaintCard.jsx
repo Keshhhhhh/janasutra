@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { PriorityBadge } from './PriorityBadge';
 import { StatusBadge } from './StatusBadge';
-import { assetUrl } from '../utils/api';
+import { assetUrl, categoryLabel } from '../utils/api';
+import { Icon } from './Icon';
 
 const FAKE_LABELS = {
   ai_generated: 'AI-generated photo',
@@ -12,12 +13,16 @@ const FAKE_LABELS = {
 export function ComplaintCard({ complaint, onClick, onDelete }) {
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const img = complaint.images?.[0];
+  const civic = complaint.civic_ai;
+  const unconfirmed = civic && ['registry_unconfirmed', 'unresolved'].includes(civic.department_basis);
+  const needsReview = civic && (civic.review_reasons.length > 0 || unconfirmed);
 
   const handleDelete = async (e) => {
-    e.stopPropagation(); // Prevent card click
+    e.stopPropagation();
     if (!confirming) {
       setConfirming(true);
-      setTimeout(() => setConfirming(false), 3000); // Auto-cancel after 3s
+      setTimeout(() => setConfirming(false), 3000);
       return;
     }
     setDeleting(true);
@@ -30,98 +35,51 @@ export function ComplaintCard({ complaint, onClick, onDelete }) {
     }
   };
 
-  const cancelDelete = (e) => {
-    e.stopPropagation();
-    setConfirming(false);
-  };
-
   return (
-    <div className="card card-interactive complaint-card" onClick={onClick} style={{ opacity: deleting ? 0.4 : 1, transition: 'opacity 0.3s' }}>
-      <div className="complaint-card-header mb-2">
-        <span className="ticket-id">{complaint.ticket_id}</span>
-        <PriorityBadge priority={complaint.priority} />
-      </div>
-      
-      {complaint.authenticity?.flagged && (
-        <div className="authenticity-flag mb-2" title={complaint.authenticity.reasons.join('\n')}>
-          ⚠️ Suspected fake: {FAKE_LABELS[complaint.authenticity.verdict] || complaint.authenticity.verdict}
+    <article className={`ccard${deleting ? ' fading' : ''}`} onClick={onClick} tabIndex={0}
+      onKeyDown={(e) => e.key === 'Enter' && onClick?.()}>
+      <div className="ccard-media">
+        {img ? <img src={assetUrl(img)} alt="" loading="lazy" /> : <div className="ccard-noimg"><Icon name="image" size={28} /></div>}
+        <div className="ccard-overlay">
+          <PriorityBadge priority={complaint.priority} />
         </div>
-      )}
-
-      {complaint.civic_ai && (complaint.civic_ai.review_reasons.length > 0
-        || ['registry_unconfirmed', 'unresolved'].includes(complaint.civic_ai.department_basis)) && (
-        <div className="ai-review-flag mb-2" title={[
-          ...complaint.civic_ai.review_reasons,
-          ...(['registry_unconfirmed', 'unresolved'].includes(complaint.civic_ai.department_basis)
-            ? ['Responsible authority not confirmed'] : []),
-        ].join('\n')}>
-          🔎 Review: {complaint.civic_ai.subcategory_name} ({Math.round(complaint.civic_ai.confidence * 100)}%)
-          {complaint.civic_ai.consistency === 'contradiction' && ' · photo/text mismatch'}
-        </div>
-      )}
-
-      <div className="complaint-card-body">
-        {complaint.images && complaint.images.length > 0 && (
-          <div className="mb-2" style={{ height: '100px', overflow: 'hidden', borderRadius: 'var(--radius-sm)' }}>
-            <img 
-              src={assetUrl(complaint.images[0])} 
-              alt="Complaint" 
-              style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-            />
-          </div>
-        )}
-        <p className="complaint-card-desc">{complaint.description}</p>
       </div>
-
-      <div className="complaint-card-footer mt-4">
-        <div>
-          <span className="text-secondary" style={{ marginRight: '8px' }}>{complaint.department}</span>
+      <div className="ccard-body">
+        <div className="ccard-top">
+          <span className="mono ccard-id">{complaint.ticket_id}</span>
           <StatusBadge status={complaint.status} />
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span>{new Date(complaint.created_at || Date.now()).toLocaleDateString()}</span>
-          {onDelete && !confirming && (
-            <button
-              onClick={handleDelete}
-              style={{
-                background: 'none', border: 'none', cursor: 'pointer',
-                fontSize: '14px', padding: '4px 6px', borderRadius: '4px',
-                opacity: 0.5, transition: 'opacity 0.2s'
-              }}
-              onMouseEnter={e => e.target.style.opacity = 1}
-              onMouseLeave={e => e.target.style.opacity = 0.5}
-              title="Delete complaint"
-            >
-              🗑️
-            </button>
-          )}
-          {onDelete && confirming && (
-            <div style={{ display: 'flex', gap: '4px' }} onClick={e => e.stopPropagation()}>
-              <button
-                onClick={handleDelete}
-                disabled={deleting}
-                style={{
-                  background: 'var(--color-error)', color: 'white', border: 'none',
-                  fontSize: '12px', padding: '3px 8px', borderRadius: '4px',
-                  cursor: 'pointer', fontWeight: 500
-                }}
-              >
-                {deleting ? '...' : 'Delete'}
+        <p className="ccard-desc">{complaint.description}</p>
+
+        {complaint.authenticity?.flagged && (
+          <div className="flag danger" title={complaint.authenticity.reasons.join('\n')}>
+            <Icon name="shield" size={14} /> Suspected fake: {FAKE_LABELS[complaint.authenticity.verdict] || complaint.authenticity.verdict}
+          </div>
+        )}
+        {needsReview && (
+          <div className="flag warn" title={[...civic.review_reasons, ...(unconfirmed ? ['Responsible authority not confirmed'] : [])].join('\n')}>
+            <Icon name="info" size={14} /> Review: {civic.subcategory_name} ({Math.round(civic.confidence * 100)}%)
+            {civic.consistency === 'contradiction' && ' · photo/text mismatch'}
+          </div>
+        )}
+
+        <div className="ccard-foot">
+          <span className="ccard-dept"><Icon name="building" size={14} /> {complaint.department || categoryLabel(complaint.category)}</span>
+          <span className="ccard-date">{new Date(complaint.created_at || Date.now()).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>
+          {onDelete && (
+            confirming ? (
+              <span className="ccard-confirm" onClick={(e) => e.stopPropagation()}>
+                <button className="btn btn-danger btn-xs" onClick={handleDelete} disabled={deleting}>Delete</button>
+                <button className="btn btn-ghost btn-xs" onClick={(e) => { e.stopPropagation(); setConfirming(false); }}>Cancel</button>
+              </span>
+            ) : (
+              <button className="icon-btn" onClick={handleDelete} title="Delete report" aria-label="Delete report">
+                <Icon name="trash" size={16} />
               </button>
-              <button
-                onClick={cancelDelete}
-                style={{
-                  background: 'var(--color-surface-hover)', border: 'none',
-                  fontSize: '12px', padding: '3px 8px', borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
-              >
-                Cancel
-              </button>
-            </div>
+            )
           )}
         </div>
       </div>
-    </div>
+    </article>
   );
 }

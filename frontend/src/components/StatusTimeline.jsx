@@ -1,32 +1,24 @@
 import React from 'react';
 
-export function StatusTimeline({ status, history }) {
-  // history is array of { status, timestamp }
-  // Provide defaults if not available
-  const steps = [
-    { key: 'submitted', label: 'Submitted' },
-    { key: 'verified', label: 'Verified' },
-    { key: 'in_progress', label: 'In Progress' },
-    { key: 'resolved', label: 'Resolved' }
-  ];
+const STEPS = [
+  { key: 'submitted', label: 'Submitted', sub: 'Received and classified' },
+  { key: 'verified', label: 'Verified', sub: 'Checked by an official' },
+  { key: 'in_progress', label: 'In progress', sub: 'Work has started' },
+  { key: 'resolved', label: 'Resolved', sub: 'Fixed' },
+];
 
-  const currentStatusIndex = steps.findIndex(s => s.key === (status || 'submitted').toLowerCase().replace(' ', '_'));
-  const activeIndex = currentStatusIndex === -1 ? 0 : currentStatusIndex;
-
+export function StatusTimeline({ status }) {
+  const i = STEPS.findIndex((s) => s.key === (status || 'submitted').toLowerCase().replace(' ', '_'));
+  const active = i === -1 ? 0 : i;
   return (
-    <div className="timeline">
-      {steps.map((step, idx) => {
-        const isActive = idx <= activeIndex;
-        return (
-          <div key={step.key} className={`timeline-item ${isActive ? 'active' : ''}`}>
-            <div className="timeline-dot"></div>
-            <div className="timeline-content">
-              <h4>{step.label}</h4>
-              {/* Optional: Add dates here if history contains them */}
-            </div>
-          </div>
-        );
-      })}
-    </div>
+    <ol className="timeline" style={{ '--progress': `${(active / (STEPS.length - 1)) * 100}%` }}>
+      {STEPS.map((s, idx) => (
+        <li key={s.key} className={`tl-step${idx <= active ? ' done' : ''}${idx === active ? ' current' : ''}`}>
+          <span className="tl-dot" />
+          <span className="tl-label">{s.label}</span>
+          <span className="tl-sub">{s.sub}</span>
+        </li>
+      ))}
+    </ol>
   );
 }

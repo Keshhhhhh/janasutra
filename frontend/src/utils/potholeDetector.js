@@ -1,10 +1,8 @@
 // On-device pothole detection with ONNX Runtime Web.
 // Runs the YOLO model in the browser (WebGPU when available, else WebAssembly)
 // so live scanning doesn't depend on a slow server round trip per frame.
-import * as ort from 'onnxruntime-web/webgpu';
+import { ort, createSession } from './ortSession';
 
-// WASM binaries are fetched from the CDN build matching the installed package
-ort.env.wasm.wasmPaths = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ort.env.versions.web}/dist/`;
 
 const MODEL_URL = '/models/pothole.onnx';
 // Threshold + input size ship next to the model so a retrained model can change them
@@ -15,15 +13,7 @@ let detectorPromise = null;
 
 async function createDetector() {
   const config = await fetch(MODEL_CONFIG_URL).then((r) => r.json());
-  const providers = 'gpu' in navigator ? ['webgpu', 'wasm'] : ['wasm'];
-  let session;
-  try {
-    session = await ort.InferenceSession.create(MODEL_URL, { executionProviders: providers });
-  } catch (err) {
-    if (providers[0] !== 'webgpu') throw err;
-    // Some WebGPU implementations reject ops the model needs; WASM always works
-    session = await ort.InferenceSession.create(MODEL_URL, { executionProviders: ['wasm'] });
-  }
+  const session = await createSession(MODEL_URL, { preferGpu: true });
 
   const size = config.inputSize;
   const canvas = document.createElement('canvas');

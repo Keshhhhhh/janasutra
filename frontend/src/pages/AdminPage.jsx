@@ -6,6 +6,7 @@ import { StatsCard } from '../components/StatsCard';
 import { ComplaintCard } from '../components/ComplaintCard';
 import { PriorityBadge } from '../components/PriorityBadge';
 import { LoadingSpinner } from '../components/LoadingSpinner';
+import { Icon } from '../components/Icon';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
 
@@ -78,7 +79,7 @@ export function AdminPage() {
     return true;
   });
 
-  if (authLoading || loading) return <LoadingSpinner />;
+  if (authLoading || loading) return <LoadingSpinner text="Loading dashboard…" />;
   if (!isAdmin) return null;
 
   const defaultCenter = [12.9716, 77.5946];
@@ -96,28 +97,28 @@ export function AdminPage() {
   };
 
   return (
-    <div className="container" style={{ paddingTop: 'var(--space-6)', paddingBottom: 'var(--space-12)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-6)' }}>
+    <div className="shell wide">
+      <header className="page-head row">
         <div>
-          <h1 style={{ marginBottom: 'var(--space-1)' }}>Admin Dashboard</h1>
-          <p className="text-secondary">Overview of civic complaints across Bengaluru</p>
+          <span className="eyebrow">Admin</span>
+          <h1>Civic issues overview</h1>
+          <p className="muted">All reports, their priority and where they are.</p>
         </div>
-        <button className="btn btn-secondary" onClick={fetchDashboardData}>↻ Refresh</button>
-      </div>
+        <button className="btn btn-ghost" onClick={() => { setLoading(true); fetchDashboardData(); }}><Icon name="refresh" size={18} /> Refresh</button>
+      </header>
 
-      {/* Stats Row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 'var(--space-4)', marginBottom: 'var(--space-8)' }}>
-        <StatsCard icon="📝" value={stats?.total_complaints || 0} label="Total" />
-        <StatsCard icon="⚡" value={stats?.total_open || 0} label="Open" />
-        <StatsCard icon="✅" value={stats?.total_resolved || 0} label="Resolved" />
-        <StatsCard icon="🔗" value={stats?.total_master_tickets || 0} label="Master Tickets" />
-        <StatsCard icon="🚨" value={p1Count} label="P1 Critical" />
-        <StatsCard icon="⚠️" value={p2Count} label="P2 High" />
+      <div className="stats">
+        <StatsCard icon="file" value={stats?.total_complaints || 0} label="Total reports" />
+        <StatsCard icon="clock" value={stats?.total_open || 0} label="Open" tone="info" />
+        <StatsCard icon="check" value={stats?.total_resolved || 0} label="Resolved" tone="ok" />
+        <StatsCard icon="link" value={stats?.total_master_tickets || 0} label="Grouped issues" />
+        <StatsCard icon="alert" value={p1Count} label="P1 critical" tone="danger" />
+        <StatsCard icon="alert" value={p2Count} label="P2 high" tone="warn" />
       </div>
 
       {/* Map */}
-      <div className="card" style={{ padding: 0, overflow: 'hidden', marginBottom: 'var(--space-8)' }}>
-        <div style={{ height: '400px' }}>
+      <div className="panel flush map-panel">
+        <div style={{ height: '420px' }}>
           <MapContainer center={defaultCenter} zoom={12} style={{ height: '100%', width: '100%' }}>
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
@@ -146,24 +147,27 @@ export function AdminPage() {
       </div>
 
       {/* Filters + Complaint List */}
-      <div className="card">
-        <h2 style={{ marginBottom: 'var(--space-4)' }}>All Complaints</h2>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-3)', marginBottom: 'var(--space-6)' }}>
-          <input
-            type="text"
-            className="form-input"
-            placeholder="Search by ticket ID or description..."
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            style={{ flex: '1', minWidth: '200px' }}
-          />
-          <select className="form-input" value={filter.dept} onChange={e => setFilter({...filter, dept: e.target.value})} style={{ width: 'auto', minWidth: '160px' }}>
+      <section>
+        <div className="section-row">
+          <h2 className="h3">All reports <span className="muted">· {filteredComplaints.length}</span></h2>
+        </div>
+        <div className="toolbar">
+          <label className="searchbar compact">
+            <Icon name="search" size={18} />
+            <input
+              type="text"
+              placeholder="Search ticket ID or description"
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+            />
+          </label>
+          <select className="select" value={filter.dept} onChange={e => setFilter({...filter, dept: e.target.value})}>
             <option value="">All Departments</option>
             {[...new Set(complaints.map(c => c.department).filter(Boolean))].sort().map(d => (
               <option key={d} value={d}>{d}</option>
             ))}
           </select>
-          <select className="form-input" value={filter.priority} onChange={e => setFilter({...filter, priority: e.target.value})} style={{ width: 'auto', minWidth: '130px' }}>
+          <select className="select" value={filter.priority} onChange={e => setFilter({...filter, priority: e.target.value})}>
             <option value="">All Priorities</option>
             <option value="P1">P1 Critical</option>
             <option value="P2">P2 High</option>
@@ -171,14 +175,14 @@ export function AdminPage() {
             <option value="P4">P4 Low</option>
             <option value="P5">P5 Minimal</option>
           </select>
-          <select className="form-input" value={filter.status} onChange={e => setFilter({...filter, status: e.target.value})} style={{ width: 'auto', minWidth: '130px' }}>
+          <select className="select" value={filter.status} onChange={e => setFilter({...filter, status: e.target.value})}>
             <option value="">All Statuses</option>
             <option value="submitted">Submitted</option>
             <option value="verified">Verified</option>
             <option value="in_progress">In Progress</option>
             <option value="resolved">Resolved</option>
           </select>
-          <select className="form-input" value={filter.authenticity} onChange={e => setFilter({...filter, authenticity: e.target.value})} style={{ width: 'auto', minWidth: '150px' }}>
+          <select className="select" value={filter.authenticity} onChange={e => setFilter({...filter, authenticity: e.target.value})}>
             <option value="">All Photos</option>
             <option value="flagged">Suspected Fake</option>
             <option value="ai_review">Needs AI review</option>
@@ -186,7 +190,7 @@ export function AdminPage() {
         </div>
 
         {filteredComplaints.length > 0 ? (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 'var(--space-4)' }}>
+          <div className="cards">
             {filteredComplaints.map(c => (
               <ComplaintCard
                 key={c.id}
@@ -197,12 +201,12 @@ export function AdminPage() {
             ))}
           </div>
         ) : (
-          <div style={{ textAlign: 'center', padding: 'var(--space-12)', color: 'var(--color-text-secondary)' }}>
-            <p style={{ fontSize: '18px', marginBottom: 'var(--space-2)' }}>No complaints match your filters</p>
-            <p>Try adjusting the filters above</p>
+          <div className="empty small">
+            <h3>No reports match these filters</h3>
+            <p className="muted">Try clearing a filter or the search.</p>
           </div>
         )}
-      </div>
+      </section>
     </div>
   );
 }

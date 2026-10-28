@@ -12,7 +12,7 @@ export function StatusBadge({ status }) {
 
   return (
     <span className={`badge ${sClass}`}>
-      {status}
+      {status.toString().replace('_', ' ')}
     </span>
   );
 }

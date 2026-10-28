@@ -95,3 +95,10 @@ export const api = {
     return handleResponse(response);
   }
 };
+
+/** "tree_fall" -> "Tree fall" for display. */
+export function categoryLabel(category) {
+  if (!category) return '';
+  const s = category.replace(/_/g, ' ');
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}

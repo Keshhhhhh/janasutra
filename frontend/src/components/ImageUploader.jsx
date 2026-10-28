@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { extractGPS } from '../utils/exif';
+import { Icon } from './Icon';
 
 export function ImageUploader({ images, setImages, setLocation, onLiveScan }) {
   const cameraInputRef = useRef(null);
@@ -17,6 +18,7 @@ export function ImageUploader({ images, setImages, setLocation, onLiveScan }) {
     setError('');
 
     const newImages = [];
+    let locatedFromExif = false;
     
     for (const file of files) {
       const url = URL.createObjectURL(file);
@@ -26,19 +28,22 @@ export function ImageUploader({ images, setImages, setLocation, onLiveScan }) {
       if (source === 'gallery') {
         const gps = await extractGPS(file);
         if (gps) {
-          setLocation({ ...gps, source: 'exif' });
+          setLocation({ ...gps, source: 'photo_gps' });
+          locatedFromExif = true;
         }
       }
     }
 
-    // If from camera, get location from device
-    if (source === 'camera' && 'geolocation' in navigator) {
+    // Location for every photo: EXIF GPS from the gallery file when present,
+    // otherwise the device's current position
+    const hasExif = source === 'gallery' && locatedFromExif;
+    if (!hasExif && 'geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(
         (position) => {
           setLocation({
             lat: position.coords.latitude,
             lon: position.coords.longitude,
-            source: 'camera'
+            source: source === 'camera' ? 'camera' : 'device_gps'
           });
         },
         (err) => {
@@ -64,7 +69,7 @@ export function ImageUploader({ images, setImages, setLocation, onLiveScan }) {
   };
 
   return (
-    <div className="mb-6">
+    <div className="uploader">
       <input 
         type="file" 
         accept="image/*" 
@@ -82,55 +87,38 @@ export function ImageUploader({ images, setImages, setLocation, onLiveScan }) {
         onChange={(e) => handleFileChange(e, 'gallery')}
       />
 
-      <div className="dropzone">
+      <div className={`capture-grid${onLiveScan ? '' : ' two'}`}>
         {onLiveScan && (
-          <button
-            type="button"
-            className="btn btn-accent btn-full mb-4"
-            onClick={onLiveScan}
-            disabled={images.length >= 5}
-          >
-            🎯 Live Pothole Scan — auto-detect with camera
+          <button type="button" className="capture-tile featured" onClick={onLiveScan} disabled={images.length >= 5}>
+            <span className="capture-icon"><Icon name="scan" size={22} /></span>
+            <span className="capture-title">Live detection</span>
+            <span className="capture-sub">Finds potholes, garbage, fallen trees and more</span>
           </button>
         )}
-        <div className="flex justify-center gap-4 flex-wrap">
-          <button 
-            type="button" 
-            className="btn btn-primary" 
-            onClick={() => cameraInputRef.current?.click()}
-            disabled={images.length >= 5}
-          >
-            📷 Take Photo
-          </button>
-          <button 
-            type="button" 
-            className="btn btn-secondary" 
-            onClick={() => galleryInputRef.current?.click()}
-            disabled={images.length >= 5}
-          >
-            📁 Choose from Gallery
-          </button>
-        </div>
-        <p className="mt-4 text-secondary text-sm">
-          {images.length}/5 images uploaded. Take a clear picture of the issue.
-        </p>
-        {error && <p className="form-error">{error}</p>}
+        <button type="button" className="capture-tile" onClick={() => cameraInputRef.current?.click()} disabled={images.length >= 5}>
+          <span className="capture-icon"><Icon name="camera" size={22} /></span>
+          <span className="capture-title">Camera</span>
+          <span className="capture-sub">Take a photo</span>
+        </button>
+        <button type="button" className="capture-tile" onClick={() => galleryInputRef.current?.click()} disabled={images.length >= 5}>
+          <span className="capture-icon"><Icon name="image" size={22} /></span>
+          <span className="capture-title">Gallery</span>
+          <span className="capture-sub">Choose photos</span>
+        </button>
       </div>
+      {error && <p className="field-error">{error}</p>}
 
       {images.length > 0 && (
-        <div className="thumbnail-row">
+        <div className="thumbs">
           {images.map((img, idx) => (
-            <div key={idx} className="thumbnail-container">
-              <img src={img.url} alt={`Upload ${idx}`} className="thumbnail" />
-              <button 
-                type="button" 
-                className="remove-btn" 
-                onClick={() => removeImage(idx)}
-              >
-                ✕
+            <div key={img.url} className="thumb">
+              <img src={img.url} alt={`Photo ${idx + 1}`} />
+              <button type="button" className="thumb-remove" onClick={() => removeImage(idx)} aria-label="Remove photo">
+                <Icon name="x" size={14} strokeWidth={2.6} />
               </button>
             </div>
           ))}
+          <span className="thumbs-count">{images.length}/5</span>
         </div>
       )}
     </div>
