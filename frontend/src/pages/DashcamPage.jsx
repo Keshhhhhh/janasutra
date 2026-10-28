@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { loadRoadDamage, detectRoadDamage } from '../utils/roadDamageDetector';
 import { loadDetector, detectPotholes } from '../utils/potholeDetector';
+import { loadCivicScene, classifyScene } from '../utils/civicScene';
 import { PriorityBadge } from '../components/PriorityBadge';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../utils/api';
@@ -15,6 +16,8 @@ import { api } from '../utils/api';
 
 const FRAME_INTERVAL_MS = 60;
 const HITS_TO_CONFIRM = 3;          // frames a track must be seen in before it is logged
+const SCENE_INTERVAL_MS = 1000;     // the scene classifier is slower; run it about once a second
+const SCENE_HITS_TO_CONFIRM = 2;    // consecutive scene checks that must agree before logging
 const TRACK_TIMEOUT_MS = 1200;      // a track not seen for this long is closed
 const TRACK_IOU = 0.2;
 const SAME_HAZARD_METRES = 15;      // same class within this distance = the same defect
@@ -79,6 +82,9 @@ export function DashcamPage() {
 
   const updateHazards = () => setHazards([...hazardsRef.current]);
   const latestRef = useRef([]);
+  const sceneOkRef = useRef(false);
+  const sceneRef = useRef({ at: 0, issues: [] });
+  const [sceneIssues, setSceneIssues] = useState([]);
 
   // Log what the camera sees right now, without waiting for 3 frames (handheld demos)
   const captureNow = () => {
@@ -110,6 +116,8 @@ export function DashcamPage() {
     setStatus('Loading road-damage model…');
     try {
       await Promise.all([loadRoadDamage(), loadDetector()]);
+      setStatus('Loading scene model (first time only, ~90 MB)…');
+      sceneOkRef.current = await loadCivicScene().then(() => true, () => false);
     } catch (err) {
       setError(`Could not load the road-damage model: ${err.message}`);
       return;
@@ -162,6 +170,7 @@ export function DashcamPage() {
     streamRef.watchId = null;
     videoRef.current?.pause?.();
     setBoxes([]);
+    setSceneIssues([]);
     setStatus(hazardsRef.current.length ? 'Drive finished. Review the hazards below.' : 'Stopped.');
   };
 
@@ -184,7 +193,7 @@ export function DashcamPage() {
       const area = (d.x2 - d.x1) * (d.y2 - d.y1);
       let t = tracks.find((t) => t.classIndex === d.classIndex && iou(t.box, d) > TRACK_IOU);
       if (!t) {
-        t = { classIndex: d.classIndex, hits: 0, best: null, logged: null };
+        t = { classIndex: d.classIndex, scene: !!d.scene, hits: 0, best: null, logged: null };
         tracks.push(t);
       }
       t.box = d;
@@ -195,7 +204,7 @@ export function DashcamPage() {
         t.best = { area, confidence: d.confidence, detection: d, location: currentLocation(),
                    videoTime: video.currentTime, blobPromise: snapshot(video) };
       }
-      if (t.hits >= HITS_TO_CONFIRM && !t.logged) {
+      if (t.hits >= (d.scene ? SCENE_HITS_TO_CONFIRM : HITS_TO_CONFIRM) && !t.logged) {
         const loc = t.best.location;
         const same = loc && hazardsRef.current.find((h) =>
           h.name === d.name && h.location && metres(h.location, loc) < SAME_HAZARD_METRES);
@@ -218,7 +227,8 @@ export function DashcamPage() {
         });
       }
     }
-    tracksRef.current = tracks.filter((t) => now - t.lastSeen < TRACK_TIMEOUT_MS);
+    // Scene tracks are updated once a second, so they get a longer timeout
+    tracksRef.current = tracks.filter((t) => now - t.lastSeen < (t.scene ? 2.5 * SCENE_INTERVAL_MS : TRACK_TIMEOUT_MS));
   };
 
   const loop = async () => {
@@ -233,8 +243,18 @@ export function DashcamPage() {
           const dets = [...cracks, ...potholes.boxes.map(({ x1, y1, x2, y2, confidence }) => ({
             x1, y1, x2, y2, confidence, classIndex: 100, name: 'pothole', label: 'Pothole', subcategoryId: 'ROAD.POTHOLE'
           }))];
+          setBoxes([...dets]);  // boxes only; scene issues are shown as chips
+          // Scene-level issues (fallen tree, garbage, flooding...): whole-frame detections
+          if (sceneOkRef.current && performance.now() - sceneRef.current.at >= SCENE_INTERVAL_MS) {
+            const issues = await classifyScene(video);
+            sceneRef.current = { at: performance.now(), issues };
+            setSceneIssues(issues);
+            issues.forEach((i, k) => dets.push({
+              x1: 0, y1: 0, x2: 1, y2: 1, confidence: i.probability, classIndex: 200 + k, scene: true,
+              name: i.name, label: i.label, subcategoryId: i.subcategoryId
+            }));
+          }
           const now = performance.now();
-          setBoxes(dets);
           latestRef.current = [...dets].sort((a, b) => b.confidence - a.confidence);
           await track(dets, now);
           updateHazards();
@@ -340,8 +360,8 @@ export function DashcamPage() {
       <div className="mb-4">
         <h1>Road Scan</h1>
         <p className="text-secondary">
-          Point your phone camera at the road, or open a recorded video. Potholes and road cracks are detected live
-          on your phone, each one is logged once with a photo and GPS position, and you review them before anything
+          Point your phone camera at the road, or open a recorded video. Potholes, road cracks, fallen trees,
+          garbage, flooding, debris and open manholes are detected live on your phone, each one is logged once with a photo and GPS position, and you review them before anything
           is submitted. (Dashboard-mounted dashcam use will come later; never handle the phone while driving.)
         </p>
       </div>
@@ -384,6 +404,11 @@ export function DashcamPage() {
           )}
           <div className={fullscreen ? 'live-camera-frame' : ''}>
             <div className="live-camera-stage">
+              {sceneIssues.length > 0 && (
+                <div className="scene-chips">
+                  {sceneIssues.map((i) => <span key={i.name} className="scene-chip">⚠️ {i.label} {Math.round(i.probability * 100)}%</span>)}
+                </div>
+              )}
               <video ref={videoRef} autoPlay playsInline muted className="live-camera-video" />
               {boxes.map((b, i) => (
                 <div key={i} className={`detection-box dashcam-${b.name}`}
