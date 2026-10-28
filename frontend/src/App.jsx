@@ -7,6 +7,7 @@ import { TrackPage } from './pages/TrackPage';
 import { MyComplaintsPage } from './pages/MyComplaintsPage';
 import { LoginPage } from './pages/LoginPage';
 import { AdminPage } from './pages/AdminPage';
+import { DashcamPage } from './pages/DashcamPage';
 
 export default function App() {
   return (
@@ -16,6 +17,7 @@ export default function App() {
         <main className="main-content">
           <Routes>
             <Route path="/" element={<ReportPage />} />
+            <Route path="/dashcam" element={<DashcamPage />} />
             <Route path="/track" element={<TrackPage />} />
             <Route path="/track/:ticketId" element={<TrackPage />} />
             <Route path="/my-complaints" element={<MyComplaintsPage />} />

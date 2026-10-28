@@ -19,6 +19,7 @@ export function Navbar() {
         {/* Desktop Nav */}
         <div className="navbar-nav">
           <Link to="/" className={`nav-link ${isActive('/') ? 'active' : ''}`}>Report</Link>
+          <Link to="/dashcam" className={`nav-link ${isActive('/dashcam') ? 'active' : ''}`}>Dashcam</Link>
           <Link to="/track" className={`nav-link ${isActive('/track') ? 'active' : ''}`}>Track</Link>
           
           {isLoggedIn && (
