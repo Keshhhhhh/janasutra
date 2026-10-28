@@ -357,7 +357,7 @@ export function DashcamPage() {
   const needGps = hazards.some((h) => !h.location);
   const fullscreen = running && mode === 'camera';
 
-  const DETECTS = ['Potholes', 'Cracks', 'Fallen trees', 'Garbage', 'Flooding', 'Debris', 'Open manholes'];
+  const DETECTS = ['Potholes', 'Cracks', 'Fallen trees', 'Garbage', 'Flooding', 'Debris', 'Open manholes', 'Broken poles & streetlights', 'Overflowing bins'];
   return (
     <div className="shell">
       <header className="page-head">

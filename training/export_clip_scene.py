@@ -30,11 +30,12 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.dirname(ROOT)
 sys.path.insert(0, ROOT)
 from clip_scene_prompts import ISSUES, NORMAL  # noqa: E402
-from eval_civic_detector import POSITIVES  # noqa: E402
+from eval_civic_detector import NORMAL_LOOKALIKES, POSITIVES  # noqa: E402
 
 OUT = os.path.join(PROJECT, "models", "clip-vit-b32")
 GROUP = {"fallen tree": "fallen_tree", "garbage pile": "garbage", "flooded road": "flooding",
-         "construction debris on road": "debris", "open manhole": "open_manhole"}
+         "construction debris on road": "debris", "open manhole": "open_manhole",
+         "damaged pole": "damaged_pole", "overflowing bin": "overflowing_bin"}
 MEAN = [0.48145466, 0.4578275, 0.40821073]
 STD = [0.26862954, 0.26130258, 0.27577711]
 LOGIT_SCALE = 100.0
@@ -96,9 +97,10 @@ def main(edir):
     road = sorted(glob.glob(os.path.join(ROOT, "data", "road_damage", "test", "images", "*.jpg")))
     closed = [f for f in glob.glob(f"{edir}/open_manhole/*.jpg")
               if os.path.basename(f)[:-4] not in POSITIVES["open manhole"]]
-    calib = [probs(f) for f in road[::5] + closed[::2]]
+    look = sorted(f for f in glob.glob(f"{edir}/*/*.jpg") if os.path.basename(f)[:-4] in NORMAL_LOOKALIKES)
+    calib = [probs(f) for f in road[::5] + closed[::2] + look[::2]]
     other = glob.glob(os.path.join(ROOT, "data", "authenticity", "*", "real", "gi_real_*"))[:100]
-    held = [probs(f) for f in road[2::5] + closed[1::2] + other]
+    held = [probs(f) for f in road[2::5] + closed[1::2] + look[1::2] + other]
 
     classes, report = [], {"calibration_negatives": len(calib), "heldout_negatives": len(held), "issues": {}}
     for g, k in GROUP.items():

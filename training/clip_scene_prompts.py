@@ -15,8 +15,15 @@ ISSUES = {
                ["a photo of a pile of rubble and construction debris", "a photo of broken bricks and debris on a road"]),
     "open_manhole": ("Open manhole", "DRAIN.OPEN_MANHOLE",
                      ["a photo of an open manhole without a cover", "a photo of an uncovered manhole hole in the road"]),
+    "damaged_pole": ("Fallen or damaged pole / streetlight", "LIGHT.POLE_DAMAGE",
+                     ["a photo of a leaning electricity pole about to fall", "a photo of a fallen utility pole on a road",
+                      "a photo of a bent and broken street light pole", "a photo of a knocked down lamp post"]),
+    "overflowing_bin": ("Overflowing public bin", "WASTE.OVERFLOWING_BIN",
+                        ["a photo of an overflowing public garbage bin", "a photo of a trash can overflowing with rubbish on a street"]),
 }
 NORMAL = ["a photo of a road", "a photo of a street with cars", "a photo of an asphalt road surface",
           "a photo of a cracked road", "a photo of a pothole in a road", "a photo of a closed manhole cover",
           "a photo of a city street", "a photo of trees beside a road", "a photo of a wet road after rain",
-          "a photo of a building", "a photo of a person", "a photo of an indoor room"]
+          "a photo of a building", "a photo of a person", "a photo of an indoor room",
+          "a photo of a street light pole", "a photo of an electricity pole with wires", "a photo of a street lamp",
+          "a photo of a garbage bin on a street", "a photo of railway overhead wires"]

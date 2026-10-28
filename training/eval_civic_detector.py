@@ -29,7 +29,18 @@ POSITIVES = {
                      "150241657", "154731647"],
     "open manhole": ["140991558", "140991572"],
     "construction debris on road": ["107301290", "13893154", "13940231", "163358497", "62273549"],
+    # broken / fallen streetlights and leaning or fallen utility poles
+    "damaged pole": ["154112985", "161376595", "101529648", "109644306", "1777355", "24374920", "24637300",
+                     "37777279", "57935856", "62364190", "69979649", "8082054", "147035966"],
+    "overflowing bin": ["111886029", "114090073", "151391794", "17161508", "28576028", "298488", "59431356",
+                        "194512936", "298564"],
 }
+# Checked photos of the same objects in normal condition: intact streetlights
+# and poles, railway overhead wires. Used as extra negatives.
+NORMAL_LOOKALIKES = ["126985156", "139290765", "13689350", "139998899", "3596735", "75231784", "90802765",
+                     "13644347", "76086981", "33509060", "14484565", "13101511", "14042951",
+                     "10158043", "108279978", "112168063", "124230448", "129245617", "129245618", "129259021",
+                     "132451305", "66199913", "93104088", "95430223", "97817325", "298498"]
 # Prompts that count as finding the group (a branch on the road is still a tree blockage)
 GROUP = {"fallen tree": {"fallen tree", "tree branch lying on road"},
          "garbage pile": {"garbage pile", "overflowing garbage bin"}}
